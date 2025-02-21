@@ -16,9 +16,12 @@ from dateutil import parser
 # --------------------------------------------------
 # Supabase Setup
 # --------------------------------------------------
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+# Retrieve secrets from .streamlit/secrets.toml
+SUPABASE_URL = st.secrets["supabase"]["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["supabase"]["SUPABASE_KEY"]
+TEAMS_WEBHOOK_URL = st.secrets["teams_webhook"]["TEAMS_WEBHOOK_URL"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 
 # --------------------------------------------------
 # Configuration
@@ -226,7 +229,7 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
             st.balloons()
             
             #Teams Webhook URL (store securely in secrets or an environment variable)
-            TEAMS_WEBHOOK_URL = st.secrets["TEAMS_WEBHOOK_URL"]  # e.g. from Streamlit secrets
+            #TEAMS_WEBHOOK_URL = st.secrets["TEAMS_WEBHOOK_URL"]  # e.g. from Streamlit secrets
             
                 
             # Construct a message
