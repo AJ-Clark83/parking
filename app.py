@@ -131,7 +131,7 @@ st.title("88 Colin Street Visitor Car Bay Booking")
 
 booking_open = is_booking_open()
 if not booking_open:
-    st.warning("Booking opens at 5:00 PM and closes at 8:30 AM. Please return later.")
+    st.warning("Booking opens at 2:00 PM and closes at 8:30 AM. Please return later.")
     st.stop()
 
 booking_date = get_booking_date()
