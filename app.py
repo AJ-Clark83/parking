@@ -32,7 +32,7 @@ LOCK_DURATION = 60  # 1 minute to complete form
 
 # Booking windows:
 # Opens at 14:00 (2 PM), closes at 08:30 next morning
-BOOKING_START_HOUR = 14  # 5:00 PM in 24-hour format
+BOOKING_START_HOUR = 14  # 2:00 PM (24-hr)
 BOOKING_END_HOUR = 8     # 8:30 AM
 BOOKING_END_MINUTE = 30
 
@@ -49,23 +49,19 @@ if "lock_time" not in st.session_state:
     st.session_state["timeout_reached"] = False
     st.session_state["lock_time"] = None
 
-
 # --------------------------------------------------
 # Helper functions
 # --------------------------------------------------
 def is_booking_open():
     """
     Returns True if current local time (TIMEZONE-based)
-    is between 17:00 and 08:30 next day.
-    i.e. open from 17:00 (5 PM) -> 23:59:59
-         and from 00:00 -> 08:30
-    Closed only 08:31 -> 16:59
+    is between 14:00 and 08:30 next day.
     """
     now_local = datetime.datetime.now(pytz.UTC).astimezone(TIMEZONE)
     current_hour = now_local.hour
     current_minute = now_local.minute
     
-    # If time is >= 17:00, booking is open
+    # If time is >= 14:00, booking is open
     # OR if time is < 08:30
     if current_hour >= BOOKING_START_HOUR:
         return True
@@ -75,7 +71,7 @@ def is_booking_open():
 
 def get_booking_date():
     """
-    If it's >= 17:00 local time, the booking date is tomorrow.
+    If it's >= 14:00 local time, the booking date is tomorrow.
     Otherwise, it's today.
     """
     now_local = datetime.datetime.now(pytz.UTC).astimezone(TIMEZONE)
@@ -101,28 +97,19 @@ def cleanup_old_temporary_reservations():
                     supabase.table("maca_parking").delete().eq("id", record["id"]).execute()
             except ValueError as e:
                 st.error(f"Error parsing timestamp: {e}")
-                
-# --------------------------------------------------
-# Teams channel integration
-# --------------------------------------------------
 
 def send_teams_notification(webhook_url: str, message: str):
     """
     Sends a notification to a Microsoft Teams channel 
     via an Incoming Webhook.
-
-    :param webhook_url: The full Teams webhook URL.
-    :param message:     The text to display in Teams.
     """
-    payload = {
-        "text": message
-    }
-    
+    payload = {"text": message}
     try:
         response = requests.post(webhook_url, json=payload)
         response.raise_for_status()  # Raise an error if request failed
     except Exception as e:
         print(f"Error sending Teams notification: {e}")
+
 
 # --------------------------------------------------
 # Main UI
@@ -147,7 +134,7 @@ if st.button("Check Available Bays"):
     
     st.session_state["availability_checked"] = True
     st.session_state["available_bays"] = available_bays
-    st.rerun()
+    st.experimental_rerun()  # Force a fresh UI update
 
 # --------------------------------------------------
 # If availability checked and not locked, show availability
@@ -164,7 +151,7 @@ if st.session_state.get("availability_checked") and not st.session_state.get("lo
             updated_available_bays = TOTAL_BAYS - booked_count
             
             if updated_available_bays <= 0:
-                st.error("All available bays have now been allocated. Please try again during .")
+                st.error("All available bays have now been allocated. Please try again next time.")
                 st.stop()
                 
             # Lock the booking
@@ -182,7 +169,7 @@ if st.session_state.get("availability_checked") and not st.session_state.get("lo
             }).execute()
             
             st.session_state["temp_record_id"] = temp_entry.data[0]['id']
-            st.rerun()
+            st.experimental_rerun()
             
     else:
         st.error("No bays available.")
@@ -228,12 +215,7 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
             st.success("Booking Confirmed!")
             st.balloons()
             
-            #Teams Webhook URL (store securely in secrets or an environment variable)
-            #TEAMS_WEBHOOK_URL = st.secrets["TEAMS_WEBHOOK_URL"]  # e.g. from Streamlit secrets
-            
-                
-            # Construct a message
-            # You can include more booking details or use an Adaptive Card if you want.
+            # Send Teams notification
             message_text = (
                 f"**New Booking Confirmed**\n\n"
                 f"**Name**: {first_name} {surname}\n"
@@ -241,10 +223,20 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
                 f"**Email**: {email}\n"
                 f"**Registration**: {registration}"
             )
-    
-            # Send Teams notification
             send_teams_notification(TEAMS_WEBHOOK_URL, message_text)
-    
-            # Optionally show user that a Teams message was sent
-            st.info("Notification sent to the Microsoft Teams channel.")
-
+            st.info("Notification sent to Microsoft Teams channel.")
+            
+            # --------------------------------------------------------------
+            #  ADD 5-SECOND DELAY + RESET to prevent repeated/spammed clicks
+            # --------------------------------------------------------------
+            time.sleep(5)
+            
+            # Clear/Reset form and relevant session state after 5s
+            st.session_state["availability_checked"] = False
+            st.session_state["locked"] = False
+            st.session_state["temp_record_id"] = None
+            st.session_state["timeout_reached"] = False
+            st.session_state["lock_time"] = None
+            
+            # Force a full rerun so the form is fully reset
+            st.experimental_rerun()
