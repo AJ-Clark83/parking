@@ -32,7 +32,7 @@ LOCK_DURATION = 60  # 1 minute to complete form
 
 # Booking windows:
 # Opens at 14:00 (2 PM), closes at 08:30 next morning
-BOOKING_START_HOUR = 14  # 5:00 PM in 24-hour format
+BOOKING_START_HOUR = 12  # 5:00 PM in 24-hour format
 BOOKING_END_HOUR = 8     # 8:30 AM
 BOOKING_END_MINUTE = 30
 
