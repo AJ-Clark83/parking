@@ -32,7 +32,7 @@ LOCK_DURATION = 60  # 1 minute to complete form
 
 # Booking windows:
 # Opens at 14:00 (2 PM), closes at 08:30 next morning
-BOOKING_START_HOUR = 14  # 5:00 PM in 24-hour format
+BOOKING_START_HOUR = 16  # 4:00 PM in 24-hour format
 BOOKING_END_HOUR = 8     # 8:30 AM
 BOOKING_END_MINUTE = 30
 
@@ -56,16 +56,16 @@ if "lock_time" not in st.session_state:
 def is_booking_open():
     """
     Returns True if current local time (TIMEZONE-based)
-    is between 17:00 and 08:30 next day.
-    i.e. open from 17:00 (5 PM) -> 23:59:59
+    is between 16:00 and 08:30 next day.
+    i.e. open from 16:00 (4 PM) -> 23:59:59
          and from 00:00 -> 08:30
-    Closed only 08:31 -> 16:59
+    Closed only 08:31 -> 15:59
     """
     now_local = datetime.datetime.now(pytz.UTC).astimezone(TIMEZONE)
     current_hour = now_local.hour
     current_minute = now_local.minute
     
-    # If time is >= 17:00, booking is open
+    # If time is >= 16:00, booking is open
     # OR if time is < 08:30
     if current_hour >= BOOKING_START_HOUR:
         return True
@@ -75,7 +75,7 @@ def is_booking_open():
 
 def get_booking_date():
     """
-    If it's >= 17:00 local time, the booking date is tomorrow.
+    If it's >= 16:00 local time, the booking date is tomorrow.
     Otherwise, it's today.
     """
     now_local = datetime.datetime.now(pytz.UTC).astimezone(TIMEZONE)
@@ -131,7 +131,7 @@ st.title("88 Colin Street Visitor Car Bay Booking")
 
 booking_open = is_booking_open()
 if not booking_open:
-    st.warning("Booking opens at 2:00 PM and closes at 8:30 AM. Please return later.")
+    st.warning("Booking opens at 4:00 PM and closes at 8:30 AM. Please return during this time to make your booking.")
     st.stop()
 
 booking_date = get_booking_date()
@@ -185,11 +185,15 @@ if st.session_state.get("availability_checked") and not st.session_state.get("lo
             st.rerun()
             
     else:
-        st.error("No bays available.")
+        st.error("Sorry, there are no visitor bays currently available.")
 
 # --------------------------------------------------
 # Booking Form
 # --------------------------------------------------
+# Ensure a session state flag exists
+if "booking_confirmed" not in st.session_state:
+    st.session_state["booking_confirmed"] = False
+
 if st.session_state.get("locked") and not st.session_state.get("timeout_reached"):
     st.warning("You have 60 seconds to complete the form before your temporary reservation is released.")
     elapsed_time = time.time() - st.session_state["lock_time"]
@@ -200,7 +204,7 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
         cleanup_old_temporary_reservations()
         st.session_state["timeout_reached"] = True
         st.session_state["locked"] = False
-        st.error("Time expired! Please check available bays and try again.")
+        st.error("Time expired! Please re-check available bays and try again.")
         st.stop()
     
     st.subheader("Complete Your Booking")
@@ -210,40 +214,41 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
     mobile = st.text_input("Mobile")
     registration = st.text_input("Vehicle Registration")
     
-    if st.button("Confirm Booking"):
-        # Validate form fields
-        if (not first_name or not surname or not email or not mobile or not registration 
-            or ('thiess' not in email.lower() and 'maca' not in email.lower())):
-            st.error("All fields are required, and you must use a MACA or Thiess email to book.")
-        else:
-            # Update the temporary record to finalize
-            supabase.table("maca_parking").update({
-                "first_name": first_name,
-                "surname": surname,
-                "email": email,
-                "mobile": mobile,
-                "registration": registration
-            }).eq("id", st.session_state["temp_record_id"]).execute()
-            
-            st.success("Booking Confirmed!")
-            st.balloons()
-            
-            #Teams Webhook URL (store securely in secrets or an environment variable)
-            #TEAMS_WEBHOOK_URL = st.secrets["TEAMS_WEBHOOK_URL"]  # e.g. from Streamlit secrets
-            
+    # The Confirm Booking button is disabled if booking_confirmed is True
+    if st.button("Confirm Booking", disabled=st.session_state["booking_confirmed"]):
+        # Only process if not already confirmed
+        if not st.session_state["booking_confirmed"]:
+            # Validate form fields
+            if (not first_name or not surname or not email or not mobile or not registration 
+                or ('thiess' not in email.lower() and 'maca' not in email.lower())):
+                st.error("All fields are required, and you must use a MACA or Thiess email address to book.")
+            else:
+                # Update the temporary record to finalize
+                supabase.table("maca_parking").update({
+                    "first_name": first_name,
+                    "surname": surname,
+                    "email": email,
+                    "mobile": mobile,
+                    "registration": registration
+                }).eq("id", st.session_state["temp_record_id"]).execute()
                 
-            # Construct a message
-            # You can include more booking details or use an Adaptive Card if you want.
-            message_text = (
-                f"**New Booking Confirmed**\n\n"
-                f"**Name**: {first_name} {surname}\n"
-                f"**Date**: {booking_date}\n"
-                f"**Email**: {email}\n"
-                f"**Registration**: {registration}"
-            )
-    
-            # Send Teams notification
-            send_teams_notification(TEAMS_WEBHOOK_URL, message_text)
-    
-            # Optionally show user that a Teams message was sent
-            st.info("Notification sent to the Microsoft Teams channel.")
+                st.success("Booking Confirmed!")
+                st.balloons()
+                
+                # Construct a message for Teams
+                message_text = (
+                    f"**New Booking Confirmed**\n\n"
+                    f"**Name**: {first_name} {surname}\n"
+                    f"**Date**: {booking_date}\n"
+                    f"**Email**: {email}\n"
+                    f"**Registration**: {registration}"
+                )
+        
+                # Send Teams notification
+                send_teams_notification(TEAMS_WEBHOOK_URL, message_text)
+        
+                st.info("Notification sent to the Microsoft Teams channel.")
+                
+                # Set the flag to prevent further clicks
+                st.session_state["booking_confirmed"] = True
+
