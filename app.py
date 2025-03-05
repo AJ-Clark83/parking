@@ -55,34 +55,44 @@ if "lock_time" not in st.session_state:
 # --------------------------------------------------
 def is_booking_open():
     """
-    Returns True if current local time (TIMEZONE-based)
-    is between 16:00 and 08:30 next day.
-    i.e. open from 16:00 (4 PM) -> 23:59:59
-         and from 00:00 -> 08:30
-    Closed only 08:31 -> 15:59
+    Returns True if the current local time is within the booking window
+    and the next day's booking date is NOT Monday.
     """
     now_local = datetime.datetime.now(pytz.UTC).astimezone(TIMEZONE)
+    booking_date = get_booking_date()
+
+    # If the calculated booking date is Monday, prevent booking
+    if booking_date.weekday() == 0:  # 0 = Monday
+        return False  
+
     current_hour = now_local.hour
     current_minute = now_local.minute
-    
-    # If time is >= 16:00, booking is open
-    # OR if time is < 08:30
+
+    # Booking is open between 16:00 (4 PM) - 08:30 the next day
     if current_hour >= BOOKING_START_HOUR:
         return True
     elif current_hour < BOOKING_END_HOUR or (current_hour == BOOKING_END_HOUR and current_minute <= BOOKING_END_MINUTE):
         return True
+
     return False
+
 
 def get_booking_date():
     """
-    If it's >= 16:00 local time, the booking date is tomorrow.
-    Otherwise, it's today.
+    Determines the booking date based on the current time.
+    - If it's after 16:00, the booking is for tomorrow.
+    - If tomorrow is Monday, booking is not allowed.
     """
     now_local = datetime.datetime.now(pytz.UTC).astimezone(TIMEZONE)
+
+    # Determine the next day's booking date
     if now_local.hour >= BOOKING_START_HOUR:
-        return (now_local + datetime.timedelta(days=1)).date()
+        booking_date = now_local.date() + datetime.timedelta(days=1)
     else:
-        return now_local.date()
+        booking_date = now_local.date()
+
+    return booking_date
+
 
 def cleanup_old_temporary_reservations():
     """
@@ -129,10 +139,17 @@ def send_teams_notification(webhook_url: str, message: str):
 # --------------------------------------------------
 st.title("88 Colin Street Visitor Car Bay Booking")
 
+# Check if bookings are open
 booking_open = is_booking_open()
+booking_date = get_booking_date()
+
 if not booking_open:
-    st.warning("Booking opens at 4:00 PM and closes at 8:30 AM. Please return during this time to make your booking.")
-    st.stop()
+    if booking_date.weekday() == 0:  # If the next day's booking date is Monday
+        st.warning("Bookings are not allowed for Mondays. Please return after 4:00 PM on Monday to book for Tuesday.")
+    else:
+        st.warning("Booking opens at 4:00 PM and closes at 8:30 AM. Please return during this time to make your booking.")
+    
+    st.stop()  # Stop the app execution here to prevent form display
 
 booking_date = get_booking_date()
 
