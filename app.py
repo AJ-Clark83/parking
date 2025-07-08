@@ -169,7 +169,7 @@ if "math_question" not in st.session_state:
 
 if not st.session_state["math_verified"]:
     num1, num2, num3 = st.session_state["math_question"]
-    st.write("Please solve challenge to proceed to booking:")
+    st.write("Please solve the below challenge to proceed to the booking form:")
     user_answer = st.number_input(f"What is {num1} + {num2} - {num3}?", step=1, format="%d")
 
     if st.button("Verify Answer"):
