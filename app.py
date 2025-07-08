@@ -18,10 +18,10 @@ from dateutil import parser
 # --------------------------------------------------
 # Retrieve secrets from .streamlit/secrets.toml
 SUPABASE_URL = st.secrets["supabase"]["SUPABASE_URL"]
+SC = st.secrets["supabase"]["SC"]
 SUPABASE_KEY = st.secrets["supabase"]["SUPABASE_KEY"]
 TEAMS_WEBHOOK_URL = st.secrets["teams_webhook"]["TEAMS_WEBHOOK_URL"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 
 # --------------------------------------------------
 # Configuration
@@ -31,9 +31,9 @@ TIMEZONE = pytz.timezone("Asia/Shanghai")  # Adjust as needed
 LOCK_DURATION = 60  # 1 minute to complete form
 
 # Booking windows:
-# Opens at 14:00 (2 PM), closes at 08:30 next morning
+# Opens at 16:00 (4 PM), closes at 08:30 next morning
 BOOKING_START_HOUR = 16  # 4:00 PM in 24-hour format
-BOOKING_END_HOUR = 8     # 8:30 AM
+BOOKING_END_HOUR = 8  # 8:30 AM
 BOOKING_END_MINUTE = 30
 
 # --------------------------------------------------
@@ -63,7 +63,7 @@ def is_booking_open():
 
     # If the calculated booking date is Monday, prevent booking
     if booking_date.weekday() == 0:  # 0 = Monday
-        return False  
+        return False
 
     current_hour = now_local.hour
     current_minute = now_local.minute
@@ -111,14 +111,15 @@ def cleanup_old_temporary_reservations():
                     supabase.table("maca_parking").delete().eq("id", record["id"]).execute()
             except ValueError as e:
                 st.error(f"Error parsing timestamp: {e}")
-                
+
+
 # --------------------------------------------------
 # Teams channel integration
 # --------------------------------------------------
 
 def send_teams_notification(webhook_url: str, message: str):
     """
-    Sends a notification to a Microsoft Teams channel 
+    Sends a notification to a Microsoft Teams channel
     via an Incoming Webhook.
 
     :param webhook_url: The full Teams webhook URL.
@@ -127,12 +128,13 @@ def send_teams_notification(webhook_url: str, message: str):
     payload = {
         "text": message
     }
-    
+
     try:
         response = requests.post(webhook_url, json=payload)
         response.raise_for_status()  # Raise an error if request failed
     except Exception as e:
         print(f"Error sending Teams notification: {e}")
+
 
 # --------------------------------------------------
 # Main UI
@@ -147,24 +149,61 @@ if not booking_open:
     if booking_date.weekday() == 0:  # If the next day's booking date is Monday
         st.warning("Bookings are not allowed for Mondays. Please return after 4:00 PM on Monday to book for Tuesday.")
     else:
-        st.warning("Booking opens at 4:00 PM and closes at 8:30 AM. Please return during this time to make your booking.")
-    
+        st.warning(
+            "Booking opens at 4:00 PM and closes at 8:30 AM. Please return during this time to make your booking.")
+
     st.stop()  # Stop the app execution here to prevent form display
 
 booking_date = get_booking_date()
 
 # --------------------------------------------------
+# Math Challenge Before Availability Check
+# --------------------------------------------------
+if "math_verified" not in st.session_state:
+    st.session_state["math_verified"] = False
+
+if "math_question" not in st.session_state:
+    import random
+    num1, num2, num3 = random.randint(1, 60), random.randint(1, 50),random.randint(1, 50)
+    st.session_state["math_question"] = (num1, num2, num3)
+
+if not st.session_state["math_verified"]:
+    num1, num2, num3 = st.session_state["math_question"]
+    st.write("Please solve challenge to proceed to booking:")
+    user_answer = st.number_input(f"What is {num1} + {num2} - {num3}?", step=1, format="%d")
+
+    if st.button("Verify Answer"):
+        if user_answer == num1 + num2 - num3 or user_answer == SC:
+            st.success("✅ Correct! You can now check parking availability.")
+            st.session_state["math_verified"] = True
+            st.rerun()
+        else:
+            st.error("❌ Incorrect. Please try again.")
+else:
+    # Show the Check Available Bays button ONLY if math is verified
+    if st.button("Check Available Bays"):
+        cleanup_old_temporary_reservations()
+        response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
+        booked_count = len(response.data)
+        available_bays = TOTAL_BAYS - booked_count
+
+        st.session_state["availability_checked"] = True
+        st.session_state["available_bays"] = available_bays
+        st.rerun()
+
+
+# --------------------------------------------------
 # Check Available Bays
 # --------------------------------------------------
-if st.button("Check Available Bays"):
-    cleanup_old_temporary_reservations()
-    response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
-    booked_count = len(response.data)
-    available_bays = TOTAL_BAYS - booked_count
-    
-    st.session_state["availability_checked"] = True
-    st.session_state["available_bays"] = available_bays
-    st.rerun()
+#if st.button("Check Available Bays"):
+#    cleanup_old_temporary_reservations()
+#    response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
+#    booked_count = len(response.data)
+#    available_bays = TOTAL_BAYS - booked_count
+
+#    st.session_state["availability_checked"] = True
+#    st.session_state["available_bays"] = available_bays
+#    st.rerun()
 
 # --------------------------------------------------
 # If availability checked and not locked, show availability
@@ -173,21 +212,21 @@ if st.session_state.get("availability_checked") and not st.session_state.get("lo
     available_bays = st.session_state.get("available_bays", 0)
     if available_bays > 0:
         st.success(f"{available_bays} bay(s) available for {booking_date}")
-        
+
         if st.button("Request a Bay"):
             cleanup_old_temporary_reservations()
             response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
             booked_count = len(response.data)
             updated_available_bays = TOTAL_BAYS - booked_count
-            
+
             if updated_available_bays <= 0:
                 st.error("All available bays have now been allocated. Please try again during .")
                 st.stop()
-                
+
             # Lock the booking
             st.session_state["lock_time"] = time.time()
             st.session_state["locked"] = True
-            
+
             # Insert temporary record
             temp_entry = supabase.table("maca_parking").insert({
                 "date": str(booking_date),
@@ -197,10 +236,10 @@ if st.session_state.get("availability_checked") and not st.session_state.get("lo
                 "mobile": "TEMP",
                 "registration": "TEMP"
             }).execute()
-            
+
             st.session_state["temp_record_id"] = temp_entry.data[0]['id']
             st.rerun()
-            
+
     else:
         st.error("Sorry, there are no visitor bays currently available.")
 
@@ -215,7 +254,7 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
     st.warning("You have 60 seconds to complete the form before your temporary reservation is released.")
     elapsed_time = time.time() - st.session_state["lock_time"]
     remaining_time = max(0, LOCK_DURATION - int(elapsed_time))
-    
+
     # If time is up, release the lock
     if remaining_time <= 0:
         cleanup_old_temporary_reservations()
@@ -223,21 +262,21 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
         st.session_state["locked"] = False
         st.error("Time expired! Please re-check available bays and try again.")
         st.stop()
-    
+
     st.subheader("Complete Your Booking")
     first_name = st.text_input("First Name")
     surname = st.text_input("Surname")
     email = st.text_input("Email")
     mobile = st.text_input("Mobile")
     registration = st.text_input("Vehicle Registration")
-    
+
     # The Confirm Booking button is disabled if booking_confirmed is True
     if st.button("Confirm Booking", disabled=st.session_state["booking_confirmed"]):
         # Only process if not already confirmed
         if not st.session_state["booking_confirmed"]:
             # Validate form fields
-            if (not first_name or not surname or not email or not mobile or not registration 
-                or ('thiess' not in email.lower() and 'maca' not in email.lower())):
+            if (not first_name or not surname or not email or not mobile or not registration
+                    or ('thiess' not in email.lower() and 'maca' not in email.lower())):
                 st.error("All fields are required, and you must use a MACA or Thiess email address to book.")
             else:
                 # Update the temporary record to finalize
@@ -248,10 +287,10 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
                     "mobile": mobile,
                     "registration": registration
                 }).eq("id", st.session_state["temp_record_id"]).execute()
-                
+
                 st.success("Booking Confirmed!")
                 st.balloons()
-                
+
                 # Construct a message for Teams
                 message_text = (
                     f"**New Booking Confirmed**\n\n"
@@ -260,12 +299,12 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
                     f"**Email**: {email}\n"
                     f"**Registration**: {registration}"
                 )
-        
+
                 # Send Teams notification
                 send_teams_notification(TEAMS_WEBHOOK_URL, message_text)
-        
+
                 st.info("Notification sent to the Microsoft Teams channel.")
-                
+
                 # Set the flag to prevent further clicks
                 st.session_state["booking_confirmed"] = True
 
