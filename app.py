@@ -277,6 +277,13 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
     if st.button("Confirm Booking", disabled=st.session_state["booking_confirmed"]):
         # Only process if not already confirmed
         if not st.session_state["booking_confirmed"]:
+
+            # Additional validation: first or last name too short
+            if len(first_name.strip()) <= 1 or len(surname.strip()) <= 1:
+                st.error("Invalid Entry, Please add a real name and try again.")
+                time.sleep(3)  # Show message for 3 seconds
+                st.rerun()
+           
             # Validate form fields
             if (not first_name or not surname or not email or not mobile or not registration
                     or ('thiess' not in email.lower() and 'maca' not in email.lower())):
