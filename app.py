@@ -157,30 +157,41 @@ if not booking_open:
 booking_date = get_booking_date()
 
 # --------------------------------------------------
-# Math Challenge Before Availability Check
+# Question Challenge From Supabase
 # --------------------------------------------------
-if "math_verified" not in st.session_state:
-    st.session_state["math_verified"] = False
+if "question_verified" not in st.session_state:
+    st.session_state["question_verified"] = False
 
-if "math_question" not in st.session_state:
+if "current_question" not in st.session_state:
+    # Fetch a random question from Supabase
+    response = supabase.table("questions").select("Question", "Answer").execute()
+    if not response.data:
+        st.error("No questions available. Please try again later.")
+        st.stop()
+
     import random
-    num1, num2, num3 = random.randint(1, 60), random.randint(1, 50),random.randint(1, 50)
-    st.session_state["math_question"] = (num1, num2, num3)
+    selected = random.choice(response.data)
+    st.session_state["current_question"] = selected
 
-if not st.session_state["math_verified"]:
-    num1, num2, num3 = st.session_state["math_question"]
-    st.write("Please solve the below challenge to proceed to the booking form:")
-    user_answer = st.number_input(f"What is {num1} + {num2} - {num3}?", step=1, format="%d")
+if not st.session_state["question_verified"]:
+    question = st.session_state["current_question"]["Question"]
+    correct_answer = st.session_state["current_question"]["Answer"]
+
+    st.write("Please answer the question to proceed:")
+    user_answer = st.text_input(question, key="question_input")
 
     if st.button("Verify Answer"):
-        if user_answer == num1 + num2 - num3 or user_answer == SC:
+        normalized_user = user_answer.strip().lower()
+        normalized_correct = correct_answer.strip().lower()
+
+        if normalized_user == normalized_correct or user_answer == SC:
             st.success("✅ Correct! You can now check parking availability.")
-            st.session_state["math_verified"] = True
+            st.session_state["question_verified"] = True
             st.rerun()
         else:
             st.error("❌ Incorrect. Please try again.")
 else:
-    # Show the Check Available Bays button ONLY if math is verified
+    # Show the Check Available Bays button if verified
     if st.button("Check Available Bays"):
         cleanup_old_temporary_reservations()
         response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
@@ -192,18 +203,6 @@ else:
         st.rerun()
 
 
-# --------------------------------------------------
-# Check Available Bays
-# --------------------------------------------------
-#if st.button("Check Available Bays"):
-#    cleanup_old_temporary_reservations()
-#    response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
-#    booked_count = len(response.data)
-#    available_bays = TOTAL_BAYS - booked_count
-
-#    st.session_state["availability_checked"] = True
-#    st.session_state["available_bays"] = available_bays
-#    st.rerun()
 
 # --------------------------------------------------
 # If availability checked and not locked, show availability
@@ -215,30 +214,34 @@ if st.session_state.get("availability_checked") and not st.session_state.get("lo
 
         if st.button("Request a Bay"):
             cleanup_old_temporary_reservations()
+
+            # Get updated bookings count INCLUDING 'TEMP' records
             response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
-            booked_count = len(response.data)
-            updated_available_bays = TOTAL_BAYS - booked_count
+            current_count = len(response.data)
 
-            if updated_available_bays <= 0:
-                st.error("All available bays have now been allocated. Please try again during .")
+            if current_count >= TOTAL_BAYS:
+                st.error("All available bays have now been allocated.")
                 st.stop()
+            else:
+                # Now insert 'TEMP' lock
+                temp_entry = supabase.table("maca_parking").insert({
+                    "date": str(booking_date),
+                    "first_name": "TEMP",
+                    "surname": "TEMP",
+                    "email": "TEMP",
+                    "mobile": "TEMP",
+                    "registration": "TEMP"
+                }).execute()
 
-            # Lock the booking
-            st.session_state["lock_time"] = time.time()
-            st.session_state["locked"] = True
+                if not temp_entry.data:
+                    st.error("Failed to reserve your bay. Please try again.")
+                    st.stop()
 
-            # Insert temporary record
-            temp_entry = supabase.table("maca_parking").insert({
-                "date": str(booking_date),
-                "first_name": "TEMP",
-                "surname": "TEMP",
-                "email": "TEMP",
-                "mobile": "TEMP",
-                "registration": "TEMP"
-            }).execute()
+                st.session_state["temp_record_id"] = temp_entry.data[0]['id']
+                st.session_state["lock_time"] = time.time()
+                st.session_state["locked"] = True
+                st.rerun()
 
-            st.session_state["temp_record_id"] = temp_entry.data[0]['id']
-            st.rerun()
 
     else:
         st.error("Sorry, there are no visitor bays currently available.")
