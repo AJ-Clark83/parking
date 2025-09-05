@@ -26,9 +26,9 @@ with st.form("vehicle_form", clear_on_submit=True):
         phone      = st.text_input("Phone", autocomplete="tel")
     with col2:
         registration = st.text_input("Vehicle registration")
-        make         = st.text_input("Car make")
-        model        = st.text_input("Car model")
-        colour       = st.text_input("Car colour")
+        make         = st.text_input("Vehicle make")
+        model        = st.text_input("Vehicle model")
+        colour       = st.text_input("Vehicle colour")
 
     submitted = st.form_submit_button("Save vehicle", use_container_width=True)
 
