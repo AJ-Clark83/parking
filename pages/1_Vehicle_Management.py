@@ -45,9 +45,9 @@ if submitted:
     req("Email", email)
     req("Phone", phone)
     req("Vehicle registration", registration)
-    req("Car make", make)
-    req("Car model", model)
-    req("Car colour", colour)
+    req("Vehicle make", make)
+    req("Vehicle model", model)
+    req("Vehicle colour", colour)
 
     # Simple email + phone sanity checks (not strict)
     if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
