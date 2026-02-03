@@ -12,6 +12,25 @@ import pytz
 import time
 import requests
 from dateutil import parser
+import streamlit.components.v1 as components
+
+# --------------------------------------------------
+# Inject Tracking
+# --------------------------------------------------
+
+# Define the Clarity tracking script
+CLARITY_SCRIPT = """
+<script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "vbtqd6ciqh");
+</script>
+"""
+
+# 2. Inject the script into the app
+components.html(CLARITY_SCRIPT, height=0, width=0)
 
 # --------------------------------------------------
 # BLOCK COPY SEARCH
