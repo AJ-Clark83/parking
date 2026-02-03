@@ -14,6 +14,21 @@ import requests
 from dateutil import parser
 
 # --------------------------------------------------
+# BLOCK COPY SEARCH
+# --------------------------------------------------
+st.markdown("""
+<style>
+/* Disable text selection for the entire body of the app */
+.stApp {
+  -webkit-user-select: none; /* Safari */
+  -moz-user-select: none; /* Firefox */
+  -ms-user-select: none; /* IE10+ and Edge */
+  user-select: none; /* Standard syntax */
+}
+</style>
+""", unsafe_allow_html=True)
+
+# --------------------------------------------------
 # Supabase Setup
 # --------------------------------------------------
 # Retrieve secrets from .streamlit/secrets.toml
@@ -317,4 +332,5 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
 
                 # Set the flag to prevent further clicks
                 st.session_state["booking_confirmed"] = True
+
 
