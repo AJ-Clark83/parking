@@ -13,24 +13,11 @@ import time
 import requests
 from dateutil import parser
 import streamlit.components.v1 as components
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import io
+import random
 
-# --------------------------------------------------
-# Inject Tracking
-# --------------------------------------------------
 
-# Define the Clarity tracking script
-CLARITY_SCRIPT = """
-<script type="text/javascript">
-    (function(c,l,a,r,i,t,y){
-        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
-        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
-        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
-    })(window, document, "clarity", "script", "vbtqd6ciqh");
-</script>
-"""
-
-# 2. Inject the script into the app
-components.html(CLARITY_SCRIPT, height=0, width=0)
 
 # --------------------------------------------------
 # BLOCK COPY SEARCH
@@ -52,7 +39,7 @@ st.markdown("""
 # --------------------------------------------------
 # Retrieve secrets from .streamlit/secrets.toml
 SUPABASE_URL = st.secrets["supabase"]["SUPABASE_URL"]
-SC = st.secrets["supabase"]["SC"]
+SC_BP = int(st.secrets["supabase"]["SC"])
 SUPABASE_KEY = st.secrets["supabase"]["SUPABASE_KEY"]
 TEAMS_WEBHOOK_URL = st.secrets["teams_webhook"]["TEAMS_WEBHOOK_URL"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -87,6 +74,73 @@ if "lock_time" not in st.session_state:
 # --------------------------------------------------
 # Helper functions
 # --------------------------------------------------
+
+# --------------------------------------------------
+# Challenge Helpers & Logic
+# --------------------------------------------------
+
+def generate_challenge_image(number):
+    """Generates a distorted image of a number to defeat OCR."""
+    # Create a blank image with a noise background
+    img = Image.new('RGB', (200, 80), color=(240, 240, 240))
+    d = ImageDraw.Draw(img)
+    
+    # Add some random 'noise' lines
+    for _ in range(10):
+        d.line([(random.randint(0,200), random.randint(0,80)), 
+                (random.randint(0,200), random.randint(0,80))], 
+               fill=(200, 200, 200), width=1)
+
+    # Use a default font (or path to a .ttf)
+    # On some systems you might need to specify a path to a font file
+    try:
+        font = ImageFont.load_default()
+    except:
+        font = None
+
+    text = str(number)
+    # Draw text with slight random offset
+    d.text((70 + random.randint(-10, 10), 20 + random.randint(-5, 5)), 
+           text, fill=(50, 50, 50), font=font, spacing=4)
+    
+    # Apply a blur or contour to mess with OCR
+    img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
+    
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+def generate_color_block(color_rgb):
+    """Generates a simple colored square image."""
+    img = Image.new('RGB', (100, 100), color=color_rgb)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+def initialize_challenges():
+    """Ensures all required challenge keys exist in session state."""
+    if "slider_target" not in st.session_state:
+        st.session_state["slider_target"] = random.randint(10, 90)
+    
+    if "color_options" not in st.session_state:
+        colors = [
+            ("Red", (255, 0, 0)), 
+            ("Blue", (0, 0, 255)), 
+            ("Green", (0, 255, 0)), 
+            ("Yellow", (255, 255, 0))
+        ]
+        random.shuffle(colors)
+        st.session_state["color_options"] = colors
+        
+        # Pick target color
+        target_choice = random.choice(colors)
+        st.session_state["target_color_name"] = target_choice[0]
+        
+        # Find index
+        for i, (name, rgb) in enumerate(colors):
+            if name == st.session_state["target_color_name"]:
+                st.session_state["correct_color_index"] = i
+
 def is_booking_open():
     """
     Returns True if the current local time is within the booking window
@@ -189,43 +243,78 @@ if not booking_open:
     st.stop()  # Stop the app execution here to prevent form display
 
 booking_date = get_booking_date()
+# Always run the check to ensure state is healthy
+initialize_challenges()
 
-# --------------------------------------------------
-# Question Challenge From Supabase
-# --------------------------------------------------
-if "question_verified" not in st.session_state:
-    st.session_state["question_verified"] = False
+# Initialize session state for the multi-stage flow
+if "challenge_stage" not in st.session_state:
+    st.session_state["challenge_stage"] = 1 
 
-if "current_question" not in st.session_state:
-    # Fetch a random question from Supabase
-    response = supabase.table("questions").select("Question", "Answer").execute()
-    if not response.data:
-        st.error("No questions available. Please try again later.")
-        st.stop()
+# --- STAGE 1: THE SLIDER ---
+if st.session_state["challenge_stage"] == 1:
+    st.subheader("Challenge1: Match the Number")
+    st.info("Move the slider value to match the number you see in the image below.")
+    
+    target_val = st.session_state["slider_target"]
+    st.image(generate_challenge_image(target_val))
+    
+    user_slider = st.slider("Set value", 0, 100, 50)
 
-    import random
-    selected = random.choice(response.data)
-    st.session_state["current_question"] = selected
-
-if not st.session_state["question_verified"]:
-    question = st.session_state["current_question"]["Question"]
-    correct_answer = st.session_state["current_question"]["Answer"]
-
-    st.write("Please answer the question to proceed:")
-    user_answer = st.text_input(question, key="question_input")
-
-    if st.button("Verify Answer"):
-        normalized_user = user_answer.strip().lower()
-        normalized_correct = correct_answer.strip().lower()
-
-        if normalized_user == normalized_correct or user_answer == SC:
-            st.success("✅ Correct! You can now check parking availability.")
+    if st.button("Next Step"):
+        # 1. Check for Secret Bypass (SC_BP)
+        if user_slider == SC_BP:
+            st.session_state["challenge_stage"] = 3
             st.session_state["question_verified"] = True
             st.rerun()
+            
+        # 2. Check for standard target
+        elif user_slider == st.session_state["slider_target"]:
+            st.session_state["challenge_stage"] = 2
+            st.rerun()
         else:
-            st.error("❌ Incorrect. Please try again.")
-else:
-    # Show the Check Available Bays button if verified
+            st.error("Number mismatch. Try again.")
+            # Regenerate just the number for a new attempt
+            del st.session_state["slider_target"]
+            st.rerun()
+
+# --- STAGE 2: THE COLOR GRID ---
+elif st.session_state["challenge_stage"] == 2:
+    target_name = st.session_state["target_color_name"]
+    
+    st.subheader("Challenge 2: Colour Picker")
+    st.markdown(f"Click the button located under the **{target_name}** square.")
+    
+    cols = st.columns(4)
+    for i in range(4):
+        with cols[i]:
+            color_name, color_rgb = st.session_state["color_options"][i]
+            
+            # FIXED: Uncommented the image generation
+            st.image(generate_color_block(color_rgb))
+            
+            if st.button(f"Select {i+1}", key=f"btn_{i}"):
+                if i == st.session_state["correct_color_index"]:
+                    # Randomized delay to prevent bot-timing patterns
+                    delay = random.uniform(3.0, 10.0)
+                    with st.spinner(f"Running random time delay for fairness (3 - 10 seconds). Please wait..."):
+                        time.sleep(delay) 
+                    
+                    st.session_state["challenge_stage"] = 3
+                    st.session_state["question_verified"] = True
+                    st.rerun()
+                else:
+                    st.error("Wrong square! Resetting security check...")
+                    # FIXED: Reset all challenge data properly
+                    st.session_state["challenge_stage"] = 1
+                    keys_to_reset = ["color_options", "slider_target", "target_color_name"]
+                    for key in keys_to_reset:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
+
+# --- FINAL STAGE: SUCCESS ---
+elif st.session_state["challenge_stage"] == 3:
+    st.success("✅ Identity Verified")
     if st.button("Check Available Bays"):
         cleanup_old_temporary_reservations()
         response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
@@ -235,8 +324,7 @@ else:
         st.session_state["availability_checked"] = True
         st.session_state["available_bays"] = available_bays
         st.rerun()
-
-
+        pass
 
 # --------------------------------------------------
 # If availability checked and not locked, show availability
