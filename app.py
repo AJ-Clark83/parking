@@ -295,8 +295,8 @@ elif st.session_state["challenge_stage"] == 2:
             if st.button(f"Select {i+1}", key=f"btn_{i}"):
                 if i == st.session_state["correct_color_index"]:
                     # Randomized delay to prevent bot-timing patterns
-                    delay = random.uniform(3.0, 10.0)
-                    with st.spinner(f"Running random time delay for fairness (3 - 10 seconds). Please wait..."):
+                    delay = random.randint(1.0, 10.0)
+                    with st.spinner(f"Running random time delay for fairness (1 - 10 seconds). Please wait..."):
                         time.sleep(delay) 
                     
                     st.session_state["challenge_stage"] = 3
@@ -314,7 +314,7 @@ elif st.session_state["challenge_stage"] == 2:
 
 # --- FINAL STAGE: SUCCESS ---
 elif st.session_state["challenge_stage"] == 3:
-    st.success("✅ Identity Verified")
+    st.success("Checks Successfully Passed ✅")
     if st.button("Check Available Bays"):
         cleanup_old_temporary_reservations()
         response = supabase.table("maca_parking").select("id").eq("date", str(booking_date)).execute()
