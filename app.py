@@ -295,8 +295,8 @@ elif st.session_state["challenge_stage"] == 2:
             if st.button(f"Select {i+1}", key=f"btn_{i}"):
                 if i == st.session_state["correct_color_index"]:
                     # Randomized delay to prevent bot-timing patterns
-                    delay = random.uniform(1.0, 11.0)
-                    with st.spinner(f"Running random time delay for fairness (1 - 10 seconds). Please wait..."):
+                    delay = random.uniform(11.0, 20.0)
+                    with st.spinner(f"Running random time delay for fairness (10 - 20 seconds). Please wait..."):
                         time.sleep(delay) 
                     
                     st.session_state["challenge_stage"] = 3
