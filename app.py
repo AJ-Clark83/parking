@@ -359,7 +359,27 @@ if st.session_state.get("availability_checked") and not st.session_state.get("lo
                     st.error("Failed to reserve your bay. Please try again.")
                     st.stop()
 
-                st.session_state["temp_record_id"] = temp_entry.data[0]['id']
+                inserted_id = temp_entry.data[0]['id']
+
+                # --- RACE CONDITION MITIGATION ---
+                # Check the total count again after we insert our TEMP record.
+                # If multiple users inserted at the exact same millisecond, this will catch it.
+                check_response = supabase.table("maca_parking").select("id, created_at").eq("date", str(booking_date)).order("created_at").execute()
+                
+                all_bays = check_response.data
+                if len(all_bays) > TOTAL_BAYS:
+                    # Find our position in the chronological list of bookings for this date
+                    our_index = next((i for i, row in enumerate(all_bays) if row['id'] == inserted_id), -1)
+                    
+                    # If our index is >= TOTAL_BAYS (meaning we are the 6th or later booking)
+                    if our_index >= TOTAL_BAYS:
+                        # Delete our temporary record and abort
+                        supabase.table("maca_parking").delete().eq("id", inserted_id).execute()
+                        st.error("Sorry, another user secured the last bay just milliseconds before you. Please try again.")
+                        st.stop()
+                # ---------------------------------
+
+                st.session_state["temp_record_id"] = inserted_id
                 st.session_state["lock_time"] = time.time()
                 st.session_state["locked"] = True
                 st.rerun()
@@ -412,13 +432,18 @@ if st.session_state.get("locked") and not st.session_state.get("timeout_reached"
                 st.error("All fields are required, and you must use a MACA or Thiess email address to book.")
             else:
                 # Update the temporary record to finalize
-                supabase.table("maca_parking").update({
+                update_res = supabase.table("maca_parking").update({
                     "first_name": first_name,
                     "surname": surname,
                     "email": email,
                     "mobile": mobile,
                     "registration": registration
                 }).eq("id", st.session_state["temp_record_id"]).execute()
+
+                if not update_res.data:
+                    st.error("Your reservation timed out and was released. Please try again.")
+                    st.session_state["locked"] = False
+                    st.stop()
 
                 st.success("Booking Confirmed!")
                 st.balloons()
