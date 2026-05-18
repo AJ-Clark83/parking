@@ -47,7 +47,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # --------------------------------------------------
 # Configuration
 # --------------------------------------------------
-TOTAL_BAYS = 5
+TOTAL_BAYS = 4
 TIMEZONE = pytz.timezone("Asia/Shanghai")  # Adjust as needed
 LOCK_DURATION = 60  # 1 minute to complete form
 
